@@ -48,6 +48,18 @@ kasm_exec() {
     fi
 }
 
+# /mnt/obs-config used to hold only OBS's "basic" folder (profiles and scene collections).
+# It now holds the whole ~/.config/obs-studio, so move an old layout into basic/ once.
+migrate_obs_config() {
+    local cfg=/mnt/obs-config
+    if [ ! -e "$cfg/basic" ] && { [ -d "$cfg/profiles" ] || [ -d "$cfg/scenes" ]; }; then
+        echo "Moving old /mnt/obs-config layout into /mnt/obs-config/basic"
+        mkdir -p "$cfg/basic" || return 0
+        if [ -d "$cfg/profiles" ]; then mv "$cfg/profiles" "$cfg/basic/" || echo "Could not move $cfg/profiles"; fi
+        if [ -d "$cfg/scenes" ]; then mv "$cfg/scenes" "$cfg/basic/" || echo "Could not move $cfg/scenes"; fi
+    fi
+}
+
 kasm_startup() {
     if [ -n "$KASM_URL" ] ; then
         URL=$KASM_URL
@@ -57,6 +69,8 @@ kasm_startup() {
 
     if [ -z "$DISABLE_CUSTOM_STARTUP" ] ||  [ -n "$FORCE" ] ; then
 
+        migrate_obs_config
+
         echo "Entering process startup loop"
         set +x
         while true
@@ -65,6 +79,9 @@ kasm_startup() {
             then
                 /usr/bin/filter_ready
                 /usr/bin/desktop_ready
+                # OBS leaves a run_* marker here when it crashes or is killed, and then blocks the next
+                # start with a "launch in Safe Mode?" dialog. OBS is not running at this point, so clear them.
+                rm -f "$HOME"/.config/obs-studio/.sentinel/run_*
                 set +e
                 $START_COMMAND $ARGS $URL
                 set -e

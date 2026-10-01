@@ -97,13 +97,13 @@ With `docker run`, add `-e SSL_ENABLED=true -e HTTP_USER=obs -e HTTP_PASSWORD=ch
 
 | Container path | Purpose |
 | --- | --- |
-| `/mnt/obs-config` | OBS profiles (including stream, output, and encoder settings) and scene collections |
+| `/mnt/obs-config` | The whole OBS configuration: profiles, scene collections, app settings, plugin settings (such as obs-websocket), and logs |
 | `/media` | Images, videos, and audio used by sources; read-only in this example |
 | `/recordings` | Recording output; select this directory in OBS |
 
-The upstream setup redirects OBS profiles and scene collections to `/mnt/obs-config`. App-wide preferences and plugin settings (such as obs-websocket) are not stored there and reset when the container is recreated. Media and recordings require their own mounts. Use stable container paths when configuring sources.
+`/mnt/obs-config` holds OBS's entire configuration folder (`~/.config/obs-studio`). Volumes from older versions of this image, which held only profiles and scene collections, are moved into `/mnt/obs-config/basic` automatically on first start. Media and recordings require their own mounts. Use stable container paths when configuring sources.
 
-Install additional plugins and their dependencies in the image so they survive container replacement. Do not rely on packages installed manually in a running container.
+Plugins copied into `/mnt/obs-config/plugins` persist, but system packages installed manually in a running container do not. Plugins that need extra packages belong in the image.
 
 The container runs as UID 1000. The image makes `/mnt/obs-config` and `/recordings` writable for that user, so new named volumes work as is; with bind mounts, the host directories must be writable by UID 1000. Back up the configuration volume and any media you need. Stream credentials may be stored in OBS configuration; keep backups private.
 
@@ -113,6 +113,7 @@ The container runs as UID 1000. The image makes `/mnt/obs-config` and `/recordin
 
 - OBS runs inside the container on your server. A browser session does not automatically forward your laptop's camera, microphone, or desktop to OBS.
 - Closing the browser leaves the running container intact. Restarting the container interrupts OBS; automatic streaming after a restart requires additional configuration.
+- After a crash or container restart, OBS starts normally instead of asking whether to launch in Safe Mode, so it comes back unattended.
 - Hardware encoding is not enabled by these examples. See [NVIDIA hardware encoding](#nvidia-hardware-encoding).
 - Set OBS sources, encoder, stream destination, and recording paths before starting a broadcast.
 

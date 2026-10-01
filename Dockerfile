@@ -10,7 +10,8 @@
 # Set SSL_ENABLED=true for HTTPS (self-signed certificate), and HTTP_USER + HTTP_PASSWORD for a login. See kasm_obs_auth.sh.
 #
 # **NOTE:**
-# - Any additional plugins (except OBS DroidCam) will be discarded on container restart.. the ONLY persistent data is OBS configuration, which is symlinked to `/mnt/obs-config`.
+# - The whole OBS configuration (~/.config/obs-studio: profiles, scene collections, app and plugin settings) is symlinked to `/mnt/obs-config`.
+# - Packages installed in a running container are discarded when it is recreated.
 #
 #
 # **Running:**
@@ -24,7 +25,7 @@
 # ```
 
 #! Noble: the OBS PPA stopped publishing for jammy at OBS 30.2.3
-FROM kasmweb/core-ubuntu-noble:1.19.0-rolling-daily
+FROM kasmweb/core-ubuntu-noble:1.19.0-rolling-daily AS base
 
 #! Initial setup
 USER root
@@ -38,6 +39,7 @@ WORKDIR $HOME
 
 #! Add OBS Studio PPA and install OBS with minimal dependencies
 #! libvlc5 + vlc-plugin-base: needed by OBS's "VLC Video Source"
+#! libturbojpeg + libimobiledevice6 + libusbmuxd6: runtime libraries of the DroidCam plugin
 RUN apt-get update && \
     apt-get install -y software-properties-common && \
     add-apt-repository ppa:obsproject/obs-studio -y && \
@@ -49,9 +51,31 @@ RUN apt-get update && \
         obs-studio \
         ffmpeg \
         libvlc5 \
-        vlc-plugin-base && \
+        vlc-plugin-base \
+        libturbojpeg \
+        libimobiledevice6 \
+        libusbmuxd6 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+#! We are going to git clone droidcam-obs-plugin, and built it ourselves. This is because the pre-built version does not work with the latest OBS Studio.
+#! It is built in its own stage (on top of the same OBS install), so the compilers and -dev packages do not end up in the final image.
+#! libsimde-dev: the OBS 32 headers include SIMDe, which the obs-studio package does not pull in
+#! --no-as-needed: the plugin Makefile puts -l flags before the sources, so Ubuntu's default --as-needed would drop them
+#! and OBS would fail to load the plugin with "undefined symbol"
+FROM base AS droidcam-build
+RUN apt-get update && \
+    apt-get install -y \
+        build-essential \
+        pkg-config \
+        libturbojpeg0-dev libusbmuxd-dev libimobiledevice-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+        libsimde-dev && \
+    git clone --depth 1 --branch 2.5.1 https://github.com/dev47apps/droidcam-obs-plugin /tmp/droidcam-obs-plugin && \
+    cd /tmp/droidcam-obs-plugin && \
+    mkdir build && \
+    LDD_DIRS="-Wl,--no-as-needed" make
+
+FROM base
 
 #! ffmpeg in Ubuntu is really old.. so we are going to download ffmpeg 7+
 #! and use that instead, including using ln to force it to be used as the default ffmpeg
@@ -64,28 +88,11 @@ RUN curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-stati
     ln -sf /usr/local/bin/ffprobe /usr/bin/ffprobe && \
     ffmpeg -version
 
-#! We are going to git clone droidcam-obs-plugin, and built it ourselves. This is because the pre-built version does not work with the latest OBS Studio.
-#! Install the build dependencies, build in /tmp, and only keep the plugin .so
-#! libsimde-dev: the OBS 32 headers include SIMDe, which the obs-studio package does not pull in
-#! --no-as-needed: the plugin Makefile puts -l flags before the sources, so Ubuntu's default --as-needed would drop them
-#! and OBS would fail to load the plugin with "undefined symbol"
-RUN apt-get update && \
-    apt-get install -y \
-        build-essential \
-        pkg-config \
-        libturbojpeg0-dev libusbmuxd-dev libimobiledevice-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
-        libsimde-dev && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    git clone https://github.com/dev47apps/droidcam-obs-plugin /tmp/droidcam-obs-plugin && \
-    cd /tmp/droidcam-obs-plugin && \
-    git checkout tags/2.5.1 && \
-    mkdir build && \
-    LDD_DIRS="-Wl,--no-as-needed" make && \
-    mkdir -p ~/.config/obs-studio/plugins/droidcam-obs/bin/64bit && \
-    cp build/droidcam-obs.so ~/.config/obs-studio/plugins/droidcam-obs/bin/64bit/ && \
-    cp -r data ~/.config/obs-studio/plugins/droidcam-obs/ && \
-    rm -rf /tmp/droidcam-obs-plugin
+#! DroidCam goes into OBS's system plugin folders, so the /mnt/obs-config volume (mounted over ~/.config/obs-studio) does not hide it
+#! The ldd check fails the build if a runtime library of the plugin is missing
+COPY --from=droidcam-build /tmp/droidcam-obs-plugin/build/droidcam-obs.so /usr/lib/x86_64-linux-gnu/obs-plugins/droidcam-obs.so
+COPY --from=droidcam-build /tmp/droidcam-obs-plugin/data /usr/share/obs/obs-plugins/droidcam-obs
+RUN ! ldd /usr/lib/x86_64-linux-gnu/obs-plugins/droidcam-obs.so | grep "not found"
 
 #! Add to sudo users so we can actually do "sudo" within the container
 RUN echo 'kasm-user ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
@@ -126,12 +133,13 @@ RUN f=$STARTUPDIR/vnc_startup.sh && \
     grep -qF 'kasmvncpasswd -u "$VNC_USER" -wo' $f && \
     ! grep -qE -- '-sslOnly|kasm_user:|-u kasm_' $f
 
-#! IMPORTANT, the config will be symlinked to: /mnt/obs-config
+#! IMPORTANT, the whole OBS config (~/.config/obs-studio) will be symlinked to: /mnt/obs-config
+#! Older versions only linked the "basic" folder; custom_startup.sh moves such a layout into /mnt/obs-config/basic
 #! /mnt/obs-config and /recordings are owned by the container user so new named volumes are writable
-RUN mkdir -p /home/kasm-user/.config/obs-studio && \
+RUN mkdir -p /home/kasm-user/.config && \
     mkdir -p /mnt/obs-config /recordings && \
     chown 1000:0 /mnt/obs-config /recordings && \
-    ln -s /mnt/obs-config /home/kasm-user/.config/obs-studio/basic
+    ln -s /mnt/obs-config /home/kasm-user/.config/obs-studio
 
 #! Default user
 RUN chown 1000:0 $HOME
