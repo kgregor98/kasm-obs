@@ -4,6 +4,8 @@ services:
     container_name: kasm-obs
     restart: unless-stopped
     shm_size: "2gb"
+    # Time for OBS to save and finish recordings on "docker compose down"/"stop"
+    stop_grace_period: 30s
     ports:
       - "6901:6901"
     volumes:

@@ -33,6 +33,7 @@ services:
     container_name: kasm-obs
     restart: unless-stopped
     shm_size: "2gb"
+    stop_grace_period: 30s
     ports:
       - "6901:6901"
     volumes:
@@ -59,6 +60,7 @@ docker run -d \
   --name kasm-obs \
   --restart unless-stopped \
   --shm-size=2g \
+  --stop-timeout 30 \
   -p 6901:6901 \
   -v obs-config:/mnt/obs-config \
   -v obs-media:/media:ro \
@@ -129,6 +131,7 @@ The container runs as UID 1000. The image makes `/mnt/obs-config` and `/recordin
 ## Operational notes
 
 - OBS runs inside the container on your server. A browser session does not automatically forward your laptop's camera, microphone, or desktop to OBS.
+- Stopping the container lets OBS save its settings and finish any recording before it exits (up to 20 seconds, set with `OBS_STOP_TIMEOUT`). Keep Docker's stop timeout above that: `stop_grace_period: 30s` in Compose or `--stop-timeout 30` with `docker run`; Docker's default of 10 seconds can cut a recording short. For this reason the image turns off OBS's "outputs are still active" exit confirmation, which would otherwise block the shutdown.
 - Closing the browser leaves the running container intact. Restarting the container interrupts OBS; to resume streaming automatically, set `OBS_ARGS=--startstreaming` (see [OBS startup options](#obs-startup-options)).
 - After a crash or container restart, OBS starts normally instead of asking whether to launch in Safe Mode, so it comes back unattended.
 - Hardware encoding is not enabled by these examples. See [NVIDIA hardware encoding](#nvidia-hardware-encoding).

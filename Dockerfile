@@ -21,6 +21,7 @@
 #  -p 6901:6901 \
 #  -v obs-config:/mnt/obs-config \
 #  --shm-size=2g \
+#  --stop-timeout 30 \
 #  ghcr.io/kgregor98/kasm-obs:latest
 # ```
 
@@ -116,20 +117,25 @@ RUN sed -i -E 's/^([[:space:]]*)require_ssl:[[:space:]]*true/\1require_ssl: fals
 #!  - source kasm_obs_auth.sh right after "set -e"
 #!  - replace the hard-coded -sslOnly with $KASMVNC_SECURITY_OPTS
 #!  - use $VNC_USER instead of the hard-coded kasm_user, and drop the view-only kasm_viewer login
+#!  - run kasm_obs_shutdown.sh at the start of cleanup(), so "docker stop" lets OBS save and finish recordings
 #! The greps fail the build if the upstream script changes and a patch no longer applies.
 COPY kasm_obs_auth.sh $STARTUPDIR/kasm_obs_auth.sh
-RUN f=$STARTUPDIR/vnc_startup.sh && \
+COPY kasm_obs_shutdown.sh $STARTUPDIR/kasm_obs_shutdown.sh
+RUN chmod +x $STARTUPDIR/kasm_obs_shutdown.sh && \
+    f=$STARTUPDIR/vnc_startup.sh && \
     sed -i \
         -e '0,/^set -e$/s//set -e\nsource \/dockerstartup\/kasm_obs_auth.sh/' \
         -e 's/ -sslOnly / $KASMVNC_SECURITY_OPTS /g' \
         -e 's/"kasm_user:\$VNC_PW"/"$VNC_USER:$VNC_PW"/g' \
         -e '/kasmvncpasswd -u kasm_user -wo/c\printf "%s\\n%s\\n" "$VNC_PW" "$VNC_PW" | kasmvncpasswd -u "$VNC_USER" -wo' \
         -e '/kasmvncpasswd -u kasm_viewer/d' \
+        -e '/^function cleanup () {$/a\    /dockerstartup/kasm_obs_shutdown.sh' \
         $f && \
     grep -qx 'source /dockerstartup/kasm_obs_auth.sh' $f && \
     [ "$(grep -cF ' $KASMVNC_SECURITY_OPTS ' $f)" -eq 2 ] && \
     [ "$(grep -cF '"$VNC_USER:$VNC_PW"' $f)" -eq 4 ] && \
     grep -qF 'kasmvncpasswd -u "$VNC_USER" -wo' $f && \
+    grep -A1 '^function cleanup () {$' $f | grep -qx '    /dockerstartup/kasm_obs_shutdown.sh' && \
     ! grep -qE -- '-sslOnly|kasm_user:|-u kasm_' $f
 
 #! IMPORTANT, the whole OBS config (~/.config/obs-studio) will be symlinked to: /mnt/obs-config
