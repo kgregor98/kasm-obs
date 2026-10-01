@@ -18,7 +18,13 @@ ghcr.io/kgregor98/kasm-obs:latest
 
 ## Quick start with Compose
 
-Create a `compose.yaml`:
+Use the [`compose.yaml`](compose.yaml) from this repository (it also lists the optional settings as comments):
+
+```bash
+curl -O https://raw.githubusercontent.com/kgregor98/kasm-obs/main/compose.yaml
+```
+
+Or create one with the minimal setup:
 
 ```yaml
 services:
@@ -127,6 +133,7 @@ The container runs as UID 1000. The image makes `/mnt/obs-config` and `/recordin
 - After a crash or container restart, OBS starts normally instead of asking whether to launch in Safe Mode, so it comes back unattended.
 - Hardware encoding is not enabled by these examples. See [NVIDIA hardware encoding](#nvidia-hardware-encoding).
 - Set OBS sources, encoder, stream destination, and recording paths before starting a broadcast.
+- The image has a healthcheck: the container shows as `healthy` in `docker ps` when OBS is running and the web UI responds. Docker does not restart unhealthy containers on its own; OBS itself is restarted automatically inside the container if it exits.
 
 ## NVIDIA hardware encoding
 

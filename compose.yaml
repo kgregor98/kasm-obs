@@ -1,0 +1,30 @@
+services:
+  obs:
+    image: ghcr.io/kgregor98/kasm-obs:latest
+    container_name: kasm-obs
+    restart: unless-stopped
+    shm_size: "2gb"
+    ports:
+      - "6901:6901"
+    volumes:
+      - obs-config:/mnt/obs-config
+      - obs-media:/media:ro
+      - obs-recordings:/recordings
+    # environment:
+    #   SSL_ENABLED: "true"
+    #   HTTP_USER: "obs"
+    #   HTTP_PASSWORD: "change-me"
+    #   OBS_ARGS: '--startstreaming --profile "Live" --scene "Starting Soon"'
+    # NVIDIA hardware encoding (needs the NVIDIA Container Toolkit on the host):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  obs-config:
+  obs-media:
+  obs-recordings:

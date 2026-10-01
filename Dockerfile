@@ -148,4 +148,11 @@ ENV HOME=/home/kasm-user
 WORKDIR $HOME
 RUN mkdir -p $HOME && chown -R 1000:0 $HOME
 
+#! Healthy when OBS is running and the web UI answers (any HTTP status counts, so 401 with a login is fine)
+#! https is tried first and plain http second, so it works with SSL_ENABLED on or off
+HEALTHCHECK --interval=30s --timeout=15s --start-period=90s --retries=3 \
+    CMD pgrep -x obs > /dev/null && \
+        { curl -sk -m 5 -o /dev/null https://localhost:${NO_VNC_PORT:-6901}/ || \
+          curl -s -m 5 -o /dev/null http://localhost:${NO_VNC_PORT:-6901}/; }
+
 USER 1000
