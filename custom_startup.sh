@@ -2,13 +2,16 @@
 set -ex
 START_COMMAND="obs"
 PGREP="obs"
-MAXIMIZE="true"
-DEFAULT_ARGS=""
 
-if [[ $MAXIMIZE == 'true' ]] ; then
-    DEFAULT_ARGS+=" --start-maximized"
+# Extra OBS command-line options from OBS_ARGS, parsed like a shell command line so quoted
+# values with spaces work, e.g. OBS_ARGS='--startstreaming --scene "Main Scene"'
+ARGS=()
+if [ -n "$OBS_ARGS" ]; then
+    if ! eval "ARGS=($OBS_ARGS)"; then
+        echo "OBS_ARGS could not be parsed, starting OBS without it: $OBS_ARGS" >&2
+        ARGS=()
+    fi
 fi
-ARGS=${APP_ARGS:-$DEFAULT_ARGS}
 
 options=$(getopt -o gau: -l go,assign,url: -n "$0" -- "$@") || exit
 eval set -- "$options"
@@ -42,7 +45,7 @@ kasm_exec() {
     if [ -n "$URL" ] ; then
         /usr/bin/filter_ready
         /usr/bin/desktop_ready
-        $START_COMMAND $ARGS $OPT_URL
+        $START_COMMAND "${ARGS[@]}" $OPT_URL
     else
         echo "No URL specified for exec command. Doing nothing."
     fi
@@ -83,7 +86,7 @@ kasm_startup() {
                 # start with a "launch in Safe Mode?" dialog. OBS is not running at this point, so clear them.
                 rm -f "$HOME"/.config/obs-studio/.sentinel/run_*
                 set +e
-                $START_COMMAND $ARGS $URL
+                $START_COMMAND "${ARGS[@]}" $URL
                 set -e
             fi
             sleep 1

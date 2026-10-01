@@ -2,7 +2,7 @@
 #
 # Using KASM (basically web-based VNC) to run OBS.
 # 
-# This is NOT meant for using a local camera, etc. I use the solely for remote streaming.
+# This is NOT meant for using a local camera, etc. I use this solely for remote streaming.
 #
 # **IMPORTANT:**
 # 
@@ -17,9 +17,9 @@
 # **Running:**
 #
 # ```sh
-# podman run -it --rm \
+# docker run -d \
 #  -p 6901:6901 \
-#  -v /path/to/obs-config:/mnt/obs-config \
+#  -v obs-config:/mnt/obs-config \
 #  --shm-size=2g \
 #  ghcr.io/kgregor98/kasm-obs:latest
 # ```
@@ -58,7 +58,7 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-#! We are going to git clone droidcam-obs-plugin, and built it ourselves. This is because the pre-built version does not work with the latest OBS Studio.
+#! We are going to git clone droidcam-obs-plugin, and build it ourselves. This is because the pre-built version does not work with the latest OBS Studio.
 #! It is built in its own stage (on top of the same OBS install), so the compilers and -dev packages do not end up in the final image.
 #! libsimde-dev: the OBS 32 headers include SIMDe, which the obs-studio package does not pull in
 #! --no-as-needed: the plugin Makefile puts -l flags before the sources, so Ubuntu's default --as-needed would drop them
@@ -109,7 +109,6 @@ RUN chmod +x $STARTUPDIR/custom_startup.sh
 #! We do this by changing require_ssl in /usr/share/kasmvnc/kasmvnc_defaults.yaml from require_ssl: true to require_ssl: false
 #! SSL_ENABLED=true passes -sslOnly on the command line, which takes precedence over this config value
 RUN sed -i -E 's/^([[:space:]]*)require_ssl:[[:space:]]*true/\1require_ssl: false/' /usr/share/kasmvnc/kasmvnc_defaults.yaml
-RUN cat /usr/share/kasmvnc/kasmvnc_defaults.yaml
 
 #! SSL and HTTP auth are decided at container start from SSL_ENABLED, HTTP_USER and HTTP_PASSWORD (see kasm_obs_auth.sh)
 #! WARNING: with the defaults (nothing set) there is NO SSL and NO login, only use it behind a reverse proxy with its own auth + SSL.

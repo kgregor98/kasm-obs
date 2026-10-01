@@ -93,6 +93,17 @@ With `docker run`, add `-e SSL_ENABLED=true -e HTTP_USER=obs -e HTTP_PASSWORD=ch
 - With the login on but SSL off, the browser sends the password unencrypted. Use it only behind a reverse proxy that provides HTTPS.
 - If a reverse proxy sits in front and SSL is on, the proxy must connect to the container over HTTPS and accept the self-signed certificate.
 
+## OBS startup options
+
+`OBS_ARGS` passes extra command-line options to OBS every time it starts, including automatic restarts after a crash. Quote values that contain spaces:
+
+```yaml
+    environment:
+      OBS_ARGS: '--startstreaming --profile "Live" --collection "Main" --scene "Starting Soon"'
+```
+
+Useful options: `--startstreaming`, `--startrecording`, `--startreplaybuffer`, `--startvirtualcam`, `--profile`, `--collection`, `--scene`, `--studio-mode`, `--minimize-to-tray`, `--verbose`. If the value can't be parsed (for example an unclosed quote), OBS starts without it and the error is written to the container log.
+
 ## Persistent data
 
 | Container path | Purpose |
@@ -112,7 +123,7 @@ The container runs as UID 1000. The image makes `/mnt/obs-config` and `/recordin
 ## Operational notes
 
 - OBS runs inside the container on your server. A browser session does not automatically forward your laptop's camera, microphone, or desktop to OBS.
-- Closing the browser leaves the running container intact. Restarting the container interrupts OBS; automatic streaming after a restart requires additional configuration.
+- Closing the browser leaves the running container intact. Restarting the container interrupts OBS; to resume streaming automatically, set `OBS_ARGS=--startstreaming` (see [OBS startup options](#obs-startup-options)).
 - After a crash or container restart, OBS starts normally instead of asking whether to launch in Safe Mode, so it comes back unattended.
 - Hardware encoding is not enabled by these examples. See [NVIDIA hardware encoding](#nvidia-hardware-encoding).
 - Set OBS sources, encoder, stream destination, and recording paths before starting a broadcast.
