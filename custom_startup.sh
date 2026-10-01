@@ -1,112 +1,84 @@
-#**Description:**
-#
-# Using KASM (basically web-based VNC) to run OBS.
-# 
-# This is NOT meant for using a local camera, etc. I use the solely for remote streaming.
-#
-# **IMPORTANT:**
-# 
-# There is **NO AUTHENTICATION** and **NO SSL** in this container. This is meant for local use only, or when you have a reverse proxy in front of it.
-# In my use-case, I am using nginx with Let's Encrypt and basic auth, so I do not need the VNC server to have its own authentication.
-#
-# **NOTE:**
-# - Any additional plugins (except OBS DroidCam) will be discarded on container restart.. the ONLY persistent data is OBS configuration, which is symlinked to `/mnt/obs-config`.
-#
-#
-# **Running:**
-#
-# ```sh
-# podman run -it --rm \
-#  -p 6901:6901 \
-#  -v /path/to/obs-config:/mnt/obs-config \
-#  --shm-size=2g \
-#  ghcr.io/cdrage/kasm-obs:latest
-# ```
+#!/usr/bin/env bash
+set -ex
+START_COMMAND="obs"
+PGREP="obs"
+MAXIMIZE="true"
+DEFAULT_ARGS=""
 
-FROM kasmweb/core-ubuntu-jammy:1.17.0-rolling-daily
+if [[ $MAXIMIZE == 'true' ]] ; then
+    DEFAULT_ARGS+=" --start-maximized"
+fi
+ARGS=${APP_ARGS:-$DEFAULT_ARGS}
 
-#! Initial setup
-USER root
-ENV HOME /home/kasm-default-profile
-ENV STARTUPDIR /dockerstartup
-ENV INST_SCRIPTS $STARTUPDIR/install
-WORKDIR $HOME
+options=$(getopt -o gau: -l go,assign,url: -n "$0" -- "$@") || exit
+eval set -- "$options"
 
-#! Add OBS Studio PPA and install OBS with minimal dependencies
-RUN apt-get update && \
-    apt-get install -y software-properties-common && \
-    add-apt-repository ppa:obsproject/obs-studio -y && \
-    apt-get update && \
-    apt-get install -y  \
-        zip \
-        unzip \
-        sudo \
-        obs-studio \
-        ffmpeg \
-        v4l2loopback-dkms \
-        v4l2loopback-utils && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+while [[ $1 != -- ]]; do
+    case $1 in
+        -g|--go) GO='true'; shift 1;;
+        -a|--assign) ASSIGN='true'; shift 1;;
+        -u|--url) OPT_URL=$2; shift 2;;
+        *) echo "bad option: $1" >&2; exit 1;;
+    esac
+done
+shift
 
-#! ffmpeg in Ubuntu is really old.. so we are going to download ffmpeg 7+
-#! and use that instead, including using ln to force it to be used as the default ffmpeg
-RUN curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o /tmp/ffmpeg.tar.xz && \
-    tar -xf /tmp/ffmpeg.tar.xz -C /tmp && \
-    cp /tmp/ffmpeg-*/ffmpeg /usr/local/bin/ && \
-    cp /tmp/ffmpeg-*/ffprobe /usr/local/bin/ && \
-    rm -rf /tmp/ffmpeg* && \
-    ln -sf /usr/local/bin/ffmpeg /usr/bin/ffmpeg && \
-    ln -sf /usr/local/bin/ffprobe /usr/bin/ffprobe && \
-    ffmpeg -version
+# Process non-option arguments.
+for arg; do
+    echo "arg! $arg"
+done
 
-#! We are going to git clone droidcam-obs-plugin, and built it ourselves. This is because the pre-built version does not work with the latest OBS Studio.
-#! First install the dependencies
-RUN apt-get update && \
-    apt-get install -y \
-        build-essential \
-        pkg-config \
-        libturbojpeg0-dev libusbmuxd-dev libimobiledevice-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
+FORCE=$2
 
-RUN git clone https://github.com/dev47apps/droidcam-obs-plugin && \
-    cd droidcam-obs-plugin && \
-    git checkout tags/2.4.0 && \
-    mkdir build && \
-    make && \
-    mkdir -p ~/.config/obs-studio/plugins/droidcam-obs/bin/64bit && \
-    cp build/droidcam-obs.so ~/.config/obs-studio/plugins/droidcam-obs/bin/64bit/
+kasm_exec() {
+    if [ -n "$OPT_URL" ] ; then
+        URL=$OPT_URL
+    elif [ -n "$1" ] ; then
+        URL=$1
+    fi 
+    
+    # Since we are execing into a container that already has the browser running from startup, 
+    #  when we don't have a URL to open we want to do nothing. Otherwise a second browser instance would open. 
+    if [ -n "$URL" ] ; then
+        /usr/bin/filter_ready
+        /usr/bin/desktop_ready
+        $START_COMMAND $ARGS $OPT_URL
+    else
+        echo "No URL specified for exec command. Doing nothing."
+    fi
+}
 
-#! Add to sudo users so we can actually do "sudo" within the container
-RUN echo 'kasm-user ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+kasm_startup() {
+    if [ -n "$KASM_URL" ] ; then
+        URL=$KASM_URL
+    elif [ -z "$URL" ] ; then
+        URL=$LAUNCH_URL
+    fi
 
-#! Run as a "single" application
-#! Set background as just plain black
-RUN cp $HOME/.config/xfce4/xfconf/single-application-xfce-perchannel-xml/* $HOME/.config/xfce4/xfconf/xfce-perchannel-xml/
-RUN apt-get remove -y xfce4-panel
+    if [ -z "$DISABLE_CUSTOM_STARTUP" ] ||  [ -n "$FORCE" ] ; then
 
-COPY custom_startup.sh $STARTUPDIR/custom_startup.sh
-RUN chmod +x $STARTUPDIR/custom_startup.sh
+        echo "Entering process startup loop"
+        set +x
+        while true
+        do
+            if ! pgrep -x $PGREP > /dev/null
+            then
+                /usr/bin/filter_ready
+                /usr/bin/desktop_ready
+                set +e
+                $START_COMMAND $ARGS $URL
+                set -e
+            fi
+            sleep 1
+        done
+        set -x
+    
+    fi
 
-#! For deploying on Kubernetes, we disable SSL by default so that we can access it via HTTP (reverse proxy + let's encrypt
-#! We do this by changing required_ssl in /usr/share/kasmvnc/kasmvnc_defaults.yaml from required_ssl: true to required_ssl: false
-RUN sed -i -E 's/^([[:space:]]*)require_ssl:[[:space:]]*true/\1require_ssl: false/' /usr/share/kasmvnc/kasmvnc_defaults.yaml
-RUN cat /usr/share/kasmvnc/kasmvnc_defaults.yaml
+} 
 
-#! Remove "-sslOnly" from the VNC startup script and replace it with "-disableBasicAuth"
-#! WARNING: This is DANGEROUS and NOT SECURE. The ONLY reason why I am doing this, is that I am using nginx reverse proxy + let's encrypt + basic auth
-#! already, so I do not need the VNC server to have its own authentication + SSL.
-RUN sed -i.bak 's/-sslOnly/-disableBasicAuth/' /dockerstartup/vnc_startup.sh
-
-#! IMPORTANT, the config will be symlinked to: /mnt/obs-config
-RUN mkdir -p /home/kasm-user/.config/obs-studio && \
-    mkdir -p /mnt/obs-config && \
-    ln -s /mnt/obs-config /home/kasm-user/.config/obs-studio/basic
-
-#! Default user
-RUN chown 1000:0 $HOME
-RUN $STARTUPDIR/set_user_permission.sh $HOME
-
-ENV HOME /home/kasm-user
-WORKDIR $HOME
-RUN mkdir -p $HOME && chown -R 1000:0 $HOME
-
-USER 1000
+if [ -n "$GO" ] || [ -n "$ASSIGN" ] ; then
+    kasm_exec
+else
+    kasm_startup
+fi
