@@ -118,9 +118,13 @@ Useful options: `--startstreaming`, `--startrecording`, `--startreplaybuffer`, `
 | --- | --- |
 | `/mnt/obs-config` | The whole OBS configuration: profiles, scene collections, app settings, plugin settings (such as obs-websocket), and logs |
 | `/media` | Images, videos, and audio used by sources; read-only in this example |
-| `/recordings` | Recording output; select this directory in OBS |
+| `/recordings` | Recording output (also replay buffer and screenshots); OBS profiles are pointed here automatically |
 
 `/mnt/obs-config` holds OBS's entire configuration folder (`~/.config/obs-studio`). Volumes from older versions of this image, which held only profiles and scene collections, are moved into `/mnt/obs-config/basic` automatically on first start. Media and recordings require their own mounts. Use stable container paths when configuring sources.
+
+OBS normally records into the home folder, which is not on a volume, so before each OBS start the image sets the recording path of every profile to `/recordings` when it is unset or still the home folder. A path you choose yourself, for example under `/media`, is left alone. A profile created in OBS during a session records to the home folder until OBS restarts, so set its path to `/recordings` when you create it.
+
+Named volumes live on the Docker host under `/var/lib/docker/volumes/<volume name>/_data`; copy media in and recordings out there, or replace a named volume with a host folder (for example `./media:/media:ro`).
 
 Plugins copied into `/mnt/obs-config/plugins` persist, but system packages installed manually in a running container do not. Plugins that need extra packages belong in the image.
 

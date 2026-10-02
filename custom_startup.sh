@@ -47,6 +47,44 @@ disable_exit_confirmation() {
     fi
 }
 
+# OBS records to $HOME by default, which is not on a volume, so recordings would be lost when the
+# container is recreated. Before each start, point every profile's recording path at /recordings
+# when it is unset or still the home folder; paths the user chose are left alone.
+# On an empty config, pre-create OBS's default "Untitled" profile so the first session records there too.
+RECORDINGS_DIR=/recordings
+
+# Sets key=$RECORDINGS_DIR in [section] of an OBS ini file, unless the key already holds another path
+set_ini_path() {
+    local ini=$1 section=$2 key=$3 tmp
+    tmp=$(mktemp) || return 0
+    awk -v sec="[$section]" -v key="$key" -v val="$RECORDINGS_DIR" -v home="$HOME" '
+        function emit() { if (insec && !done) { print key "=" val; done = 1 } }
+        /^\[/ { emit(); insec = ($0 == sec); if (insec) seen = 1 }
+        insec && index($0, key "=") == 1 {
+            cur = substr($0, length(key) + 2)
+            if (cur == "" || cur == home || cur == home "/") print key "=" val; else print
+            done = 1
+            next
+        }
+        { print }
+        END { emit(); if (!seen) { print ""; print sec; print key "=" val } }
+    ' "$ini" > "$tmp" && cat "$tmp" > "$ini"
+    rm -f "$tmp"
+}
+
+set_recording_path() {
+    local profiles=$HOME/.config/obs-studio/basic/profiles ini
+    if ! ls "$profiles"/*/basic.ini > /dev/null 2>&1; then
+        mkdir -p "$profiles/Untitled" || return 0
+        printf '[General]\nName=Untitled\n' > "$profiles/Untitled/basic.ini" || return 0
+    fi
+    for ini in "$profiles"/*/basic.ini; do
+        set_ini_path "$ini" SimpleOutput FilePath
+        set_ini_path "$ini" AdvOut RecFilePath
+        set_ini_path "$ini" AdvOut FFFilePath
+    done
+}
+
 migrate_obs_config
 
 echo "Entering process startup loop"
@@ -61,6 +99,7 @@ do
         # start with a "launch in Safe Mode?" dialog. OBS is not running at this point, so clear them.
         rm -f "$HOME"/.config/obs-studio/.sentinel/run_*
         disable_exit_confirmation
+        set_recording_path
         set +e
         obs "${ARGS[@]}"
         set -e
