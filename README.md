@@ -86,7 +86,7 @@ SSL and the browser login are off by default and are chosen at container start w
 
 The login is enabled only when both `HTTP_USER` and `HTTP_PASSWORD` are set and non-empty. If only one is set, the login stays off and a warning is written to the container log.
 
-With Compose, add an `environment` block to the `obs` service:
+The repository's `compose.yaml` already passes these through from the shell, a `.env` file next to it, or Portainer stack variables. Unset variables become empty, which means off. If you write your own compose file, add an `environment` block to the `obs` service:
 
 ```yaml
     environment:
