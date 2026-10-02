@@ -86,7 +86,7 @@ SSL and the browser login are off by default and are chosen at container start w
 
 The login is enabled only when both `HTTP_USER` and `HTTP_PASSWORD` are set and non-empty. If only one is set, the login stays off and a warning is written to the container log.
 
-The repository's `compose.yaml` already passes these through from the shell, a `.env` file next to it, or Portainer stack variables. Unset variables become empty, which means off. If you write your own compose file, add an `environment` block to the `obs` service:
+The repository's `compose.yaml` already passes these through from the shell, a `.env` file next to it, or Portainer stack variables. Unset variables become empty, which means off. In a `.env` file, Compose treats `$` as the start of a variable, so `HTTP_PASSWORD=pa$word` arrives as `pa`. Write it as `HTTP_PASSWORD='pa$word'` (single quotes) or `HTTP_PASSWORD=pa$$word`. Values exported in the shell are passed unchanged. If a password with `$` doesn't work in Portainer, use `$$` there too. If you write your own compose file, add an `environment` block to the `obs` service:
 
 ```yaml
     environment:
@@ -134,6 +134,7 @@ The container runs as UID 1000. The image makes `/mnt/obs-config` and `/recordin
 - Stopping the container lets OBS save its settings and finish any recording before it exits (up to 20 seconds, set with `OBS_STOP_TIMEOUT`). Keep Docker's stop timeout above that: `stop_grace_period: 30s` in Compose or `--stop-timeout 30` with `docker run`; Docker's default of 10 seconds can cut a recording short. For this reason the image turns off OBS's "outputs are still active" exit confirmation, which would otherwise block the shutdown.
 - Closing the browser leaves the running container intact. Restarting the container interrupts OBS; to resume streaming automatically, set `OBS_ARGS=--startstreaming` (see [OBS startup options](#obs-startup-options)).
 - After a crash or container restart, OBS starts normally instead of asking whether to launch in Safe Mode, so it comes back unattended.
+- The container uses UTC by default, which affects OBS log times and recording file names. Set `TZ` (for example `TZ=Europe/Warsaw`) to use your local time zone.
 - Hardware encoding is not enabled by these examples. See [NVIDIA hardware encoding](#nvidia-hardware-encoding).
 - Set OBS sources, encoder, stream destination, and recording paths before starting a broadcast.
 - The image has a healthcheck: the container shows as `healthy` in `docker ps` when OBS is running and the web UI port is listening. Docker does not restart unhealthy containers on its own; OBS itself is restarted automatically inside the container if it exits.
@@ -158,24 +159,4 @@ Then select an NVENC encoder in OBS under **Settings → Output**. Without a GPU
 
 ## License
 
-MIT License
-
-Copyright (c) 2026
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Released under the MIT License. See [LICENSE](LICENSE).

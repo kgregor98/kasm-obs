@@ -13,17 +13,21 @@ services:
       - obs-media:/media:ro
       - obs-recordings:/recordings
     # Values come from the shell, a .env file next to this file, or Portainer stack variables.
-    # Unset variables become empty, which the image treats as "off". Examples:
+    # Unset variables become empty, which the image treats as "off".
+    # In .env, a "$" in a value (e.g. a password) must be written as "$$" or the value single-quoted.
+    # Examples:
     #   SSL_ENABLED=true
     #   HTTP_USER=obs
     #   HTTP_PASSWORD=change-me
     #   OBS_ARGS=--startstreaming --profile "Live" --scene "Starting Soon"
+    #   TZ=Europe/Warsaw
     environment:
       SSL_ENABLED: ${SSL_ENABLED:-}
       HTTP_USER: ${HTTP_USER:-}
       HTTP_PASSWORD: ${HTTP_PASSWORD:-}
       OBS_ARGS: ${OBS_ARGS:-}
       OBS_STOP_TIMEOUT: ${OBS_STOP_TIMEOUT:-}
+      TZ: ${TZ:-Etc/UTC}
     # NVIDIA hardware encoding (needs the NVIDIA Container Toolkit on the host):
     # deploy:
     #   resources:

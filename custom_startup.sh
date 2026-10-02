@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
+# Started by /dockerstartup/vnc_startup.sh. Keeps OBS running: starts it once the desktop is
+# ready, and starts it again whenever it exits or crashes.
 set -ex
-START_COMMAND="obs"
-PGREP="obs"
 
 # Extra OBS command-line options from OBS_ARGS, parsed like a shell command line so quoted
 # values with spaces work, e.g. OBS_ARGS='--startstreaming --scene "Main Scene"'
@@ -12,44 +12,6 @@ if [ -n "$OBS_ARGS" ]; then
         ARGS=()
     fi
 fi
-
-options=$(getopt -o gau: -l go,assign,url: -n "$0" -- "$@") || exit
-eval set -- "$options"
-
-while [[ $1 != -- ]]; do
-    case $1 in
-        -g|--go) GO='true'; shift 1;;
-        -a|--assign) ASSIGN='true'; shift 1;;
-        -u|--url) OPT_URL=$2; shift 2;;
-        *) echo "bad option: $1" >&2; exit 1;;
-    esac
-done
-shift
-
-# Process non-option arguments.
-for arg; do
-    echo "arg! $arg"
-done
-
-FORCE=$2
-
-kasm_exec() {
-    if [ -n "$OPT_URL" ] ; then
-        URL=$OPT_URL
-    elif [ -n "$1" ] ; then
-        URL=$1
-    fi 
-    
-    # Since we are execing into a container that already has the browser running from startup, 
-    #  when we don't have a URL to open we want to do nothing. Otherwise a second browser instance would open. 
-    if [ -n "$URL" ] ; then
-        /usr/bin/filter_ready
-        /usr/bin/desktop_ready
-        $START_COMMAND "${ARGS[@]}" $OPT_URL
-    else
-        echo "No URL specified for exec command. Doing nothing."
-    fi
-}
 
 # /mnt/obs-config used to hold only OBS's "basic" folder (profiles and scene collections).
 # It now holds the whole ~/.config/obs-studio, so move an old layout into basic/ once.
@@ -85,43 +47,23 @@ disable_exit_confirmation() {
     fi
 }
 
-kasm_startup() {
-    if [ -n "$KASM_URL" ] ; then
-        URL=$KASM_URL
-    elif [ -z "$URL" ] ; then
-        URL=$LAUNCH_URL
+migrate_obs_config
+
+echo "Entering process startup loop"
+set +x
+while true
+do
+    if ! pgrep -x obs > /dev/null
+    then
+        /usr/bin/filter_ready
+        /usr/bin/desktop_ready
+        # OBS leaves a run_* marker here when it crashes or is killed, and then blocks the next
+        # start with a "launch in Safe Mode?" dialog. OBS is not running at this point, so clear them.
+        rm -f "$HOME"/.config/obs-studio/.sentinel/run_*
+        disable_exit_confirmation
+        set +e
+        obs "${ARGS[@]}"
+        set -e
     fi
-
-    if [ -z "$DISABLE_CUSTOM_STARTUP" ] ||  [ -n "$FORCE" ] ; then
-
-        migrate_obs_config
-
-        echo "Entering process startup loop"
-        set +x
-        while true
-        do
-            if ! pgrep -x $PGREP > /dev/null
-            then
-                /usr/bin/filter_ready
-                /usr/bin/desktop_ready
-                # OBS leaves a run_* marker here when it crashes or is killed, and then blocks the next
-                # start with a "launch in Safe Mode?" dialog. OBS is not running at this point, so clear them.
-                rm -f "$HOME"/.config/obs-studio/.sentinel/run_*
-                disable_exit_confirmation
-                set +e
-                $START_COMMAND "${ARGS[@]}" $URL
-                set -e
-            fi
-            sleep 1
-        done
-        set -x
-    
-    fi
-
-} 
-
-if [ -n "$GO" ] || [ -n "$ASSIGN" ] ; then
-    kasm_exec
-else
-    kasm_startup
-fi
+    sleep 1
+done

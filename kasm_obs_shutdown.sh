@@ -4,6 +4,10 @@
 # finish its outputs first. OBS handles SIGTERM by saving everything and quitting.
 
 OBS_STOP_TIMEOUT=${OBS_STOP_TIMEOUT:-20}
+if ! [[ "$OBS_STOP_TIMEOUT" =~ ^[1-9][0-9]*$ ]]; then
+    echo "kasm-obs: OBS_STOP_TIMEOUT='$OBS_STOP_TIMEOUT' is not a positive number of seconds, using 20" >&2
+    OBS_STOP_TIMEOUT=20
+fi
 
 # Stop the restart loop first, otherwise it starts OBS again as soon as it exits
 pkill -TERM -f /dockerstartup/custom_startup.sh

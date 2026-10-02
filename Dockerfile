@@ -38,12 +38,10 @@ ENV STARTUPDIR=/dockerstartup
 ENV INST_SCRIPTS=$STARTUPDIR/install
 WORKDIR $HOME
 
-#! Add OBS Studio PPA and install OBS with minimal dependencies
+#! Add OBS Studio PPA and install OBS with minimal dependencies (add-apt-repository is already in the Kasm base image)
 #! libvlc5 + vlc-plugin-base: needed by OBS's "VLC Video Source"
 #! libturbojpeg + libimobiledevice6 + libusbmuxd6: runtime libraries of the DroidCam plugin
-RUN apt-get update && \
-    apt-get install -y software-properties-common && \
-    add-apt-repository ppa:obsproject/obs-studio -y && \
+RUN add-apt-repository ppa:obsproject/obs-studio -y && \
     apt-get update && \
     apt-get install -y  \
         zip \

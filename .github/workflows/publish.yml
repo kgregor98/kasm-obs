@@ -57,7 +57,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          # amd64 only: the Dockerfile downloads an amd64 static ffmpeg build
+          # amd64 only: the OBS PPA publishes no arm64 builds, and the Dockerfile uses the x86_64 plugin path
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
