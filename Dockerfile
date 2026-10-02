@@ -78,16 +78,9 @@ RUN apt-get update && \
 
 FROM base
 
-#! ffmpeg in Ubuntu is really old.. so we are going to download ffmpeg 7+
-#! and use that instead, including using ln to force it to be used as the default ffmpeg
-RUN curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o /tmp/ffmpeg.tar.xz && \
-    tar -xf /tmp/ffmpeg.tar.xz -C /tmp && \
-    cp /tmp/ffmpeg-*/ffmpeg /usr/local/bin/ && \
-    cp /tmp/ffmpeg-*/ffprobe /usr/local/bin/ && \
-    rm -rf /tmp/ffmpeg* && \
-    ln -sf /usr/local/bin/ffmpeg /usr/bin/ffmpeg && \
-    ln -sf /usr/local/bin/ffprobe /usr/bin/ffprobe && \
-    ffmpeg -version
+#! Kasm's browser audio runs "ffmpeg -f pulse", so ffmpeg must support PulseAudio.
+#! Ubuntu's ffmpeg does; the static ffmpeg build this image used to install did not, and broke browser audio.
+RUN ffmpeg -hide_banner -devices 2>/dev/null | grep -q pulse
 
 #! DroidCam goes into OBS's system plugin folders, so the /mnt/obs-config volume (mounted over ~/.config/obs-studio) does not hide it
 #! The ldd check fails the build if a runtime library of the plugin is missing
@@ -154,11 +147,11 @@ ENV HOME=/home/kasm-user
 WORKDIR $HOME
 RUN mkdir -p $HOME && chown -R 1000:0 $HOME
 
-#! Healthy when OBS is running and the web UI answers (any HTTP status counts, so 401 with a login is fine)
-#! https is tried first and plain http second, so it works with SSL_ENABLED on or off
-HEALTHCHECK --interval=30s --timeout=15s --start-period=90s --retries=3 \
+#! Healthy when OBS is running and the web UI port is listening.
+#! It checks the listening socket instead of making a request, so it does not fill the KasmVNC log
+#! with a connection (and a failed-login line when HTTP auth is on) every 30 seconds.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
     CMD pgrep -x obs > /dev/null && \
-        { curl -sk -m 5 -o /dev/null https://localhost:${NO_VNC_PORT:-6901}/ || \
-          curl -s -m 5 -o /dev/null http://localhost:${NO_VNC_PORT:-6901}/; }
+        ss -Hltn "sport = :${NO_VNC_PORT:-6901}" | grep -q .
 
 USER 1000
