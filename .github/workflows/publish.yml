@@ -43,7 +43,7 @@ jobs:
 
       # Build once and load it into the local Docker, so it can be tested before anything is pushed
       - name: Build image for testing
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           # amd64 only: the OBS PPA publishes no arm64 builds, and the Dockerfile uses the x86_64 plugin path
@@ -84,7 +84,7 @@ jobs:
       # attached to it, so the cleanup job can delete untagged versions without breaking tagged ones.
       - name: Push
         if: github.event_name != 'pull_request'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64
