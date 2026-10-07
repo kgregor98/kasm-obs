@@ -41,6 +41,30 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Build once and load it into the local Docker, so it can be tested before anything is pushed
+      - name: Build image for testing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          # amd64 only: the OBS PPA publishes no arm64 builds, and the Dockerfile uses the x86_64 plugin path
+          platforms: linux/amd64
+          load: true
+          tags: kasm-obs:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test
+        run: .github/scripts/smoke-test.sh kasm-obs:ci
+
+      # Version tags come from the OBS version inside the image, e.g. obs-32.2.0 and obs-32.2.0-2026.10.07
+      - name: Read OBS version
+        id: version
+        run: |
+          obs=$(docker run --rm --entrypoint dpkg-query kasm-obs:ci -W -f '${Version}' obs-studio | cut -d- -f1)
+          [[ "$obs" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::unexpected OBS version '$obs'"; exit 1; }
+          echo "obs=$obs" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -48,19 +72,41 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=obs-${{ steps.version.outputs.obs }},enable={{is_default_branch}}
+            type=raw,value=obs-${{ steps.version.outputs.obs }}-${{ steps.version.outputs.date }},enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
             type=ref,event=pr
 
-      - name: Build and push
+      # Same build as above, taken from the cache, so what is pushed is what was tested.
+      # provenance/sbom off: a plain single-platform image, with no untagged attestation manifests
+      # attached to it, so the cleanup job can delete untagged versions without breaking tagged ones.
+      - name: Push
+        if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v6
         with:
           context: .
-          # amd64 only: the OBS PPA publishes no arm64 builds, and the Dockerfile uses the x86_64 plugin path
           platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
+          provenance: false
+          sbom: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+
+  # Old images stay on GHCR as untagged versions once their tags move to a newer build; remove them
+  cleanup:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Delete untagged image versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: kasm-obs
+          package-type: container
+          delete-only-untagged-versions: "true"
+          min-versions-to-keep: 0

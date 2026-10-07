@@ -13,7 +13,8 @@ services:
       - obs-media:/media:ro
       - obs-recordings:/recordings
     # Values come from the shell, a .env file next to this file, or Portainer stack variables.
-    # Unset variables become empty, which the image treats as "off".
+    # Unset variables become empty, which the image treats as "off", except the login:
+    # it defaults to admin / password. CHANGE IT. To turn the login off, set HTTP_USER to an empty value.
     # In .env, a "$" in a value (e.g. a password) must be written as "$$" or the value single-quoted.
     # Examples:
     #   SSL_ENABLED=true
@@ -23,8 +24,8 @@ services:
     #   TZ=Europe/Warsaw
     environment:
       SSL_ENABLED: ${SSL_ENABLED:-}
-      HTTP_USER: ${HTTP_USER:-}
-      HTTP_PASSWORD: ${HTTP_PASSWORD:-}
+      HTTP_USER: ${HTTP_USER-admin}
+      HTTP_PASSWORD: ${HTTP_PASSWORD-password}
       OBS_ARGS: ${OBS_ARGS:-}
       OBS_STOP_TIMEOUT: ${OBS_STOP_TIMEOUT:-}
       TZ: ${TZ:-Etc/UTC}

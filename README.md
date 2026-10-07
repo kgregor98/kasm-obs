@@ -16,6 +16,15 @@ Additional thanks to [OBS Studio](https://obsproject.com/) and [KasmVNC](https:/
 ghcr.io/kgregor98/kasm-obs:latest
 ```
 
+| Tag | Meaning |
+| --- | --- |
+| `latest` | Newest build of `main`. Rebuilt weekly to pick up OBS and base image updates. |
+| `obs-32.2.0` | Newest build that contains that OBS version. |
+| `obs-32.2.0-2026.10.07` | The build from that day; pin this for a fixed image. |
+| `1.2.3`, `1.2` | Builds of git tags `v1.2.3`, for named releases. |
+
+Every image is smoke-tested (starts, becomes healthy, login works, plugins load, stops cleanly) before it is published.
+
 ## Quick start with Compose
 
 Use the [`compose.yaml`](compose.yaml) from this repository (it also lists the optional settings as comments):
@@ -70,6 +79,8 @@ docker run -d \
 
 Docker creates the named volumes automatically. Choose either Compose or `docker run`.
 
+The repository's `compose.yaml` turns the login on by default with user **admin** and password **password**. Change them before exposing the container (see [Security settings](#security-settings)). The `docker run` example and the minimal compose example above have no login.
+
 Open **http://YOUR_SERVER_IP:6901** (or **http://localhost:6901** on the Docker host).
 
 Port 6901 is published on all host interfaces. By default there is no login and no SSL; see [Security settings](#security-settings) to turn them on. For public access, use a reverse proxy with HTTPS, authentication, and WebSocket support.
@@ -86,7 +97,7 @@ SSL and the browser login are off by default and are chosen at container start w
 
 The login is enabled only when both `HTTP_USER` and `HTTP_PASSWORD` are set and non-empty. If only one is set, the login stays off and a warning is written to the container log.
 
-The repository's `compose.yaml` already passes these through from the shell, a `.env` file next to it, or Portainer stack variables. Unset variables become empty, which means off. In a `.env` file, Compose treats `$` as the start of a variable, so `HTTP_PASSWORD=pa$word` arrives as `pa`. Write it as `HTTP_PASSWORD='pa$word'` (single quotes) or `HTTP_PASSWORD=pa$$word`. Values exported in the shell are passed unchanged. If a password with `$` doesn't work in Portainer, use `$$` there too. If you write your own compose file, add an `environment` block to the `obs` service:
+The repository's `compose.yaml` already passes these through from the shell, a `.env` file next to it, or Portainer stack variables. Unset variables become empty, which means off, except the login, which defaults to `admin` / `password`; set `HTTP_USER` to an empty value to turn it off. In a `.env` file, Compose treats `$` as the start of a variable, so `HTTP_PASSWORD=pa$word` arrives as `pa`. Write it as `HTTP_PASSWORD='pa$word'` (single quotes) or `HTTP_PASSWORD=pa$$word`. Values exported in the shell are passed unchanged. If a password with `$` doesn't work in Portainer, use `$$` there too. If you write your own compose file, add an `environment` block to the `obs` service:
 
 ```yaml
     environment:
