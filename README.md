@@ -2,6 +2,24 @@
 
 Run OBS Studio in a container and control its desktop interface through your browser using KasmVNC. Intended for server-side streaming with remote feeds, browser sources, overlays, and media files.
 
+## What's included
+
+- OBS Studio 32 from the official OBS Studio PPA, on Kasm's Ubuntu 24.04 desktop image
+- DroidCam plugin 2.5.1, to use a phone as a camera over the network (the phone must be reachable from the server, for example on the same network or a VPN)
+- VLC video source
+- NVENC hardware encoding when run with an NVIDIA GPU (see [NVIDIA hardware encoding](#nvidia-hardware-encoding))
+- Optional browser login and HTTPS
+- The whole OBS configuration on a volume, with recordings sent to a volume automatically
+- Unattended operation: OBS restarts after a crash without the Safe Mode prompt, can start streaming on startup, and shuts down cleanly on `docker stop`
+- A Docker healthcheck
+
+## Limitations
+
+- amd64 only. The OBS PPA publishes no arm64 builds.
+- No audio in the browser. KasmVNC on its own does not play sound; that is a Kasm Workspaces feature. Audio in your stream and recordings is not affected.
+- A browser session does not forward your computer's camera, microphone, or desktop to OBS.
+- NVENC support has not been tested on real NVIDIA hardware yet.
+
 ## Attribution
 
 This project is based on the original **kasm-obs** container setup by **[cdrage](https://github.com/cdrage)**, from [cdrage/containerfiles](https://github.com/cdrage/containerfiles/tree/master/kasm-obs).
@@ -23,17 +41,23 @@ ghcr.io/kgregor98/kasm-obs:latest
 | `obs-32.2.0-2026.10.07` | The build from that day; pin this for a fixed image. |
 | `1.2.3`, `1.2` | Builds of git tags `v1.2.3`, for named releases. |
 
-Every image is smoke-tested (starts, becomes healthy, login works, plugins load, stops cleanly) before it is published.
+Every image is smoke-tested before it is published: it must start and become healthy, require and accept the login, load the DroidCam and VLC plugins, point recordings at `/recordings`, and stop cleanly.
 
 ## Quick start with Compose
 
-Use the [`compose.yaml`](compose.yaml) from this repository (it also lists the optional settings as comments):
+Download the [`compose.yaml`](compose.yaml) from this repository. It lists all settings, with examples in comments:
 
 ```bash
 curl -O https://raw.githubusercontent.com/kgregor98/kasm-obs/main/compose.yaml
 ```
 
-Or create one with the minimal setup:
+It turns the login on with user **admin** and password **password**. Change them before you start it: set `HTTP_USER` and `HTTP_PASSWORD` in a `.env` file next to `compose.yaml`, in your shell, or as Portainer stack variables (see [Configuration](#configuration)). Then start OBS:
+
+```bash
+docker compose up -d
+```
+
+A minimal compose file without the login also works:
 
 ```yaml
 services:
@@ -56,12 +80,6 @@ volumes:
   obs-recordings:
 ```
 
-Start OBS:
-
-```bash
-docker compose up -d
-```
-
 ## Run without Compose
 
 ```bash
@@ -71,33 +89,40 @@ docker run -d \
   --shm-size=2g \
   --stop-timeout 30 \
   -p 6901:6901 \
+  -e HTTP_USER=admin \
+  -e HTTP_PASSWORD=change-me \
   -v obs-config:/mnt/obs-config \
   -v obs-media:/media:ro \
   -v obs-recordings:/recordings \
   ghcr.io/kgregor98/kasm-obs:latest
 ```
 
-Docker creates the named volumes automatically. Choose either Compose or `docker run`.
+Leave out the two `-e` lines to run without a login. Docker creates the named volumes automatically.
 
-The repository's `compose.yaml` turns the login on by default with user **admin** and password **password**. Change them before exposing the container (see [Security settings](#security-settings)). The `docker run` example and the minimal compose example above have no login.
+## Accessing OBS
 
-Open **http://YOUR_SERVER_IP:6901** (or **http://localhost:6901** on the Docker host).
+Open **http://YOUR_SERVER_IP:6901** (or **http://localhost:6901** on the Docker host), or **https://** when `SSL_ENABLED` is on.
 
-Port 6901 is published on all host interfaces. By default there is no login and no SSL; see [Security settings](#security-settings) to turn them on. For public access, use a reverse proxy with HTTPS, authentication, and WebSocket support.
+Port 6901 is published on all host interfaces. The image itself starts with no login and no SSL unless you set them (the repository's `compose.yaml` sets the login). For access from the internet, use a reverse proxy with HTTPS, authentication, and WebSocket support.
 
-## Security settings
+## Configuration
 
-SSL and the browser login are off by default and are chosen at container start with environment variables:
+All settings are environment variables:
 
-| Variable | Default | Effect |
-| --- | --- | --- |
-| `SSL_ENABLED` | unset | `true` (also `1` or `yes`, any case) serves HTTPS only. Any other value or unset serves plain HTTP. |
-| `HTTP_USER` | unset | Login username. Must not contain `:`. |
-| `HTTP_PASSWORD` | unset | Login password. |
+| Variable | Image default | `compose.yaml` default | Effect |
+| --- | --- | --- | --- |
+| `HTTP_USER` | unset | `admin` | Login username. Must not contain `:`. |
+| `HTTP_PASSWORD` | unset | `password` | Login password. |
+| `SSL_ENABLED` | unset | unset | `true` (also `1` or `yes`, any case) serves HTTPS only; anything else serves plain HTTP. |
+| `OBS_ARGS` | unset | unset | Extra OBS command-line options, see [OBS startup options](#obs-startup-options). |
+| `OBS_STOP_TIMEOUT` | `20` | `20` | Seconds OBS gets to save and finish recordings when the container stops. |
+| `TZ` | `Etc/UTC` | `Etc/UTC` | Time zone for OBS log times and recording file names, for example `Europe/Warsaw`. |
 
-The login is enabled only when both `HTTP_USER` and `HTTP_PASSWORD` are set and non-empty. If only one is set, the login stays off and a warning is written to the container log.
+`compose.yaml` passes these through from the shell, a `.env` file next to it, or Portainer stack variables. Unset variables become empty, which means off; only the login has a default there. To turn the login off with `compose.yaml`, set `HTTP_USER` to an empty value.
 
-The repository's `compose.yaml` already passes these through from the shell, a `.env` file next to it, or Portainer stack variables. Unset variables become empty, which means off, except the login, which defaults to `admin` / `password`; set `HTTP_USER` to an empty value to turn it off. In a `.env` file, Compose treats `$` as the start of a variable, so `HTTP_PASSWORD=pa$word` arrives as `pa`. Write it as `HTTP_PASSWORD='pa$word'` (single quotes) or `HTTP_PASSWORD=pa$$word`. Values exported in the shell are passed unchanged. If a password with `$` doesn't work in Portainer, use `$$` there too. If you write your own compose file, add an `environment` block to the `obs` service:
+In a `.env` file, Compose treats `$` as the start of a variable, so `HTTP_PASSWORD=pa$word` arrives as `pa`. Write it as `HTTP_PASSWORD='pa$word'` (single quotes) or `HTTP_PASSWORD=pa$$word`. Values exported in the shell are passed unchanged. If a password with `$` doesn't work in Portainer, use `$$` there too.
+
+In your own compose file, set them in an `environment` block of the `obs` service:
 
 ```yaml
     environment:
@@ -106,13 +131,17 @@ The repository's `compose.yaml` already passes these through from the shell, a `
       HTTP_PASSWORD: "change-me"
 ```
 
-With `docker run`, add `-e SSL_ENABLED=true -e HTTP_USER=obs -e HTTP_PASSWORD=change-me`.
+With `docker run`, use `-e`, for example `-e SSL_ENABLED=true -e HTTP_USER=obs -e HTTP_PASSWORD=change-me`.
 
-- With SSL on, open **https://YOUR_SERVER_IP:6901**. The certificate is self-signed and regenerated at every container start, so the browser shows a warning each time.
+### Login and SSL
+
+- The login is enabled only when both `HTTP_USER` and `HTTP_PASSWORD` are set and non-empty. If only one is set, the login stays off and a warning is written to the container log.
+- With SSL on, the certificate is self-signed and regenerated at every container start, so the browser shows a warning each time.
 - With the login on but SSL off, the browser sends the password unencrypted. Use it only behind a reverse proxy that provides HTTPS.
 - If a reverse proxy sits in front and SSL is on, the proxy must connect to the container over HTTPS and accept the self-signed certificate.
+- The user inside the container has passwordless `sudo`, so anyone who can use the web UI effectively has root inside the container. Protect access accordingly.
 
-## OBS startup options
+### OBS startup options
 
 `OBS_ARGS` passes extra command-line options to OBS every time it starts, including automatic restarts after a crash. Quote values that contain spaces:
 
@@ -128,12 +157,12 @@ Useful options: `--startstreaming`, `--startrecording`, `--startreplaybuffer`, `
 | Container path | Purpose |
 | --- | --- |
 | `/mnt/obs-config` | The whole OBS configuration: profiles, scene collections, app settings, plugin settings (such as obs-websocket), and logs |
-| `/media` | Images, videos, and audio used by sources; read-only in this example |
+| `/media` | Images, videos, and audio used by sources; read-only in the examples |
 | `/recordings` | Recording output (also replay buffer and screenshots); OBS profiles are pointed here automatically |
 
-`/mnt/obs-config` holds OBS's entire configuration folder (`~/.config/obs-studio`). Volumes from older versions of this image, which held only profiles and scene collections, are moved into `/mnt/obs-config/basic` automatically on first start. Media and recordings require their own mounts. Use stable container paths when configuring sources.
+`/mnt/obs-config` holds OBS's entire configuration folder (`~/.config/obs-studio`). Volumes from older versions of this image, which held only profiles and scene collections, are moved into `/mnt/obs-config/basic` automatically on first start. Use stable container paths such as `/media/...` when configuring sources.
 
-OBS normally records into the home folder, which is not on a volume, so before each OBS start the image sets the recording path of every profile to `/recordings` when it is unset or still the home folder. A path you choose yourself, for example under `/media`, is left alone. A profile created in OBS during a session records to the home folder until OBS restarts, so set its path to `/recordings` when you create it.
+OBS normally records into the home folder, which is not on a volume. Before each OBS start, the image sets the recording path of every profile to `/recordings` when it is unset or still the home folder. A path you choose yourself, for example under `/media`, is left alone. A profile created in OBS during a session records to the home folder until OBS restarts, so set its path to `/recordings` when you create it.
 
 Named volumes live on the Docker host under `/var/lib/docker/volumes/<volume name>/_data`; copy media in and recordings out there, or replace a named volume with a host folder (for example `./media:/media:ro`).
 
@@ -145,20 +174,17 @@ The container runs as UID 1000. The image makes `/mnt/obs-config` and `/recordin
 
 ## Operational notes
 
-- OBS runs inside the container on your server. A browser session does not automatically forward your laptop's camera, microphone, or desktop to OBS.
-- Stopping the container lets OBS save its settings and finish any recording before it exits (up to 20 seconds, set with `OBS_STOP_TIMEOUT`). Keep Docker's stop timeout above that: `stop_grace_period: 30s` in Compose or `--stop-timeout 30` with `docker run`; Docker's default of 10 seconds can cut a recording short. For this reason the image turns off OBS's "outputs are still active" exit confirmation, which would otherwise block the shutdown.
-- Closing the browser leaves the running container intact. Restarting the container interrupts OBS; to resume streaming automatically, set `OBS_ARGS=--startstreaming` (see [OBS startup options](#obs-startup-options)).
-- After a crash or container restart, OBS starts normally instead of asking whether to launch in Safe Mode, so it comes back unattended.
-- The container uses UTC by default, which affects OBS log times and recording file names. Set `TZ` (for example `TZ=Europe/Warsaw`) to use your local time zone.
-- Hardware encoding is not enabled by these examples. See [NVIDIA hardware encoding](#nvidia-hardware-encoding).
-- Set OBS sources, encoder, stream destination, and recording paths before starting a broadcast.
-- The image has a healthcheck: the container shows as `healthy` in `docker ps` when OBS is running and the web UI port is listening. Docker does not restart unhealthy containers on its own; OBS itself is restarted automatically inside the container if it exits.
+- OBS runs inside the container on your server. Closing the browser leaves it running.
+- Stopping the container lets OBS save its settings and finish any recording before it exits, for up to `OBS_STOP_TIMEOUT` seconds (20 by default). Keep Docker's stop timeout above that: `stop_grace_period: 30s` in Compose or `--stop-timeout 30` with `docker run`; Docker's default of 10 seconds can cut a recording short. For this reason the image turns off OBS's "outputs are still active" exit confirmation, which would otherwise block the shutdown.
+- If OBS exits or crashes, it is started again automatically, without the "launch in Safe Mode?" prompt. To resume streaming after a restart, set `OBS_ARGS=--startstreaming`.
+- The image has a healthcheck: the container shows as `healthy` in `docker ps` when OBS is running and the web UI port is listening. Docker does not restart unhealthy containers on its own.
+- Set your sources, encoder, and stream destination before starting a broadcast.
 
 ## NVIDIA hardware encoding
 
 NVENC needs an NVIDIA GPU and driver on the host and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html). The toolkit mounts the driver's encode libraries into the container; the image already sets `NVIDIA_DRIVER_CAPABILITIES=compute,video,utility`.
 
-With `docker run`, add `--gpus all`. With Compose, add to the `obs` service:
+With `docker run`, add `--gpus all`. With Compose, uncomment the `deploy` block in `compose.yaml`, or add it to your `obs` service:
 
 ```yaml
     deploy:
@@ -171,6 +197,23 @@ With `docker run`, add `--gpus all`. With Compose, add to the `obs` service:
 ```
 
 Then select an NVENC encoder in OBS under **Settings → Output**. Without a GPU, OBS logs a harmless `libnvidia-encode.so.1` load error and offers only software encoders.
+
+## Updating
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+With `docker run`, pull the image, then remove and recreate the container with the same command. Your configuration and recordings stay on the volumes.
+
+## Building and testing
+
+```bash
+docker build -t kasm-obs:test .
+.github/scripts/smoke-test.sh kasm-obs:test
+```
+
+The smoke test is the same one the publish workflow runs. It uses port 16901 and a container named `kasm-obs-smoke`, and ends with `Smoke test passed`. Run both commands with `sudo` if your user can't access Docker directly.
 
 ## License
 
