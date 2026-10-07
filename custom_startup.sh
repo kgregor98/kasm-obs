@@ -75,7 +75,9 @@ set_ini_path() {
 set_recording_path() {
     local profiles=$HOME/.config/obs-studio/basic/profiles ini
     if ! ls "$profiles"/*/basic.ini > /dev/null 2>&1; then
-        mkdir -p "$profiles/Untitled" || return 0
+        # basic/scenes too: OBS treats a basic/ folder without it as a very old layout and logs
+        # a failed migration of basic/scenes.json
+        mkdir -p "$profiles/Untitled" "$HOME/.config/obs-studio/basic/scenes" || return 0
         printf '[General]\nName=Untitled\n' > "$profiles/Untitled/basic.ini" || return 0
     fi
     for ini in "$profiles"/*/basic.ini; do

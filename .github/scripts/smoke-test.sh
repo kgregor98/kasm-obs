@@ -42,7 +42,20 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -u "$LOGIN_USER:$PASS" "http://loc
 [ "$code" = 200 ] || fail "web UI with login returned $code, expected 200"
 echo "OK: login required, credentials accepted"
 
-obs_log=$(docker exec "$NAME" bash -c 'cat "$(ls -t ~/.config/obs-studio/logs/*.txt | head -1)"')
+# "healthy" only means the OBS process exists; it may still be loading plugins. Wait for OBS's own
+# "Startup complete" log line before checking which plugins loaded.
+echo "Waiting for OBS to finish starting"
+for _ in $(seq 1 60); do
+    obs_log=$(docker exec "$NAME" bash -c 'cat "$(ls -t ~/.config/obs-studio/logs/*.txt | head -1)"' 2>/dev/null || true)
+    grep -q '==== Startup complete' <<< "$obs_log" && break
+    sleep 2
+done
+grep -q '==== Startup complete' <<< "$obs_log" || fail "OBS did not finish starting within 2 minutes"
+echo "OK: OBS started"
+
+if grep -q 'Failed to rename basic scene collection file' <<< "$obs_log"; then
+    fail "OBS tried to migrate a legacy scene collection on a fresh config"
+fi
 grep -q '\[droidcam-obs\] module loaded' <<< "$obs_log" || fail "DroidCam plugin not loaded"
 grep -q 'VLC video source enabled' <<< "$obs_log" || fail "VLC video source not enabled"
 echo "OK: DroidCam and VLC loaded"
@@ -51,13 +64,16 @@ docker exec "$NAME" grep -qx 'FilePath=/recordings' /mnt/obs-config/basic/profil
     || fail "recording path not set to /recordings"
 echo "OK: recordings go to /recordings"
 
-if docker logs "$NAME" 2>&1 | grep -q 'Restarting Audio Out'; then
+# Logs are captured first: with pipefail, "docker logs | grep -q" can fail when grep exits early
+container_log=$(docker logs "$NAME" 2>&1)
+if grep -q 'Restarting Audio Out' <<< "$container_log"; then
     fail "Kasm audio service is restarting"
 fi
 echo "OK: no audio service restarts"
 
 docker stop "$NAME" > /dev/null
-docker logs "$NAME" 2>&1 | grep -q 'kasm-obs: OBS stopped' || fail "OBS did not stop cleanly on docker stop"
+container_log=$(docker logs "$NAME" 2>&1)
+grep -q 'kasm-obs: OBS stopped' <<< "$container_log" || fail "OBS did not stop cleanly on docker stop"
 echo "OK: clean shutdown"
 
 echo "Smoke test passed"
