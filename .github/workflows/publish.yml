@@ -18,6 +18,8 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  # Same image is also pushed to Docker Hub; DOCKERHUB_USERNAME is a repository variable, DOCKERHUB_TOKEN a secret
+  DOCKERHUB_IMAGE: docker.io/${{ vars.DOCKERHUB_USERNAME }}/kasm-obs
 
 jobs:
   build:
@@ -40,6 +42,13 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Build once and load it into the local Docker, so it can be tested before anything is pushed
       - name: Build image for testing
@@ -69,7 +78,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+            ${{ env.DOCKERHUB_IMAGE }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=obs-${{ steps.version.outputs.obs }},enable={{is_default_branch}}
@@ -110,3 +121,25 @@ jobs:
           package-type: container
           delete-only-untagged-versions: "true"
           min-versions-to-keep: 0
+
+  # Copies README.md to the Docker Hub repository page. Needs a token with read/write/delete access:
+  # Docker Hub does not let a read/write token change the description.
+  dockerhub-description:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Update Docker Hub description
+        uses: peter-evans/dockerhub-description@v5
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ vars.DOCKERHUB_USERNAME }}/kasm-obs
+          short-description: OBS Studio in your browser via KasmVNC, for streaming from a server. Optional login and HTTPS.
+          # Relative links such as LICENSE and compose.yaml point to the GitHub repository instead
+          enable-url-completion: true

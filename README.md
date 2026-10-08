@@ -34,6 +34,8 @@ Additional thanks to [OBS Studio](https://obsproject.com/) and [KasmVNC](https:/
 ghcr.io/kgregor98/kasm-obs:latest
 ```
 
+The same image, with the same tags, is also on Docker Hub as [`camislav/kasm-obs`](https://hub.docker.com/r/camislav/kasm-obs). The examples below use GHCR, which does not rate-limit anonymous pulls the way Docker Hub does; either works.
+
 | Tag | Meaning |
 | --- | --- |
 | `latest` | Newest build of `main`. Rebuilt weekly to pick up OBS and base image updates. |
