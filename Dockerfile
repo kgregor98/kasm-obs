@@ -1,34 +1,22 @@
-#**Description:**
+# kasm-obs: OBS Studio on a KasmVNC desktop, controlled from a web browser.
+# Made for streaming from a server (remote feeds, browser sources, media files). It does not pass
+# cameras, microphones or capture devices from your computer through to OBS.
 #
-# Using KASM (basically web-based VNC) to run OBS.
-# 
-# This is NOT meant for using a local camera, etc. I use this solely for remote streaming.
+# Security: out of the box the web UI is plain HTTP with no login. Either put it behind a reverse
+# proxy that handles TLS and authentication, or set HTTP_USER + HTTP_PASSWORD and SSL_ENABLED=true
+# (self-signed certificate). See kasm_obs_auth.sh.
 #
-# **IMPORTANT:**
-# 
-# By default there is **NO AUTHENTICATION** and **NO SSL** in this container. This is meant for local use only, or when you have a reverse proxy in front of it.
-# Set SSL_ENABLED=true for HTTPS (self-signed certificate), and HTTP_USER + HTTP_PASSWORD for a login. See kasm_obs_auth.sh.
+# Data: OBS's whole config directory (~/.config/obs-studio) lives on /mnt/obs-config. Everything
+# else changed inside a running container, installed packages included, is lost when it is recreated.
 #
-# **NOTE:**
-# - The whole OBS configuration (~/.config/obs-studio: profiles, scene collections, app and plugin settings) is symlinked to `/mnt/obs-config`.
-# - Packages installed in a running container are discarded when it is recreated.
-#
-#
-# **Running:**
-#
-# ```sh
-# docker run -d \
-#  -p 6901:6901 \
-#  -v obs-config:/mnt/obs-config \
-#  --shm-size=2g \
-#  --stop-timeout 30 \
-#  ghcr.io/kgregor98/kasm-obs:latest
-# ```
+# Example:
+#   docker run -d -p 6901:6901 --shm-size=2g --stop-timeout 30 \
+#     -v obs-config:/mnt/obs-config ghcr.io/kgregor98/kasm-obs:latest
 
 #! Noble: the OBS PPA stopped publishing for jammy at OBS 30.2.3
 FROM kasmweb/core-ubuntu-noble:1.19.0-rolling-daily AS base
 
-#! Initial setup
+#! Build steps run as root and write into Kasm's default profile
 USER root
 #! NVENC: libnvidia-encode comes from the host driver, mounted by the NVIDIA Container Toolkit when run with --gpus.
 #! "video" makes the toolkit include the encode/decode libraries (the default is compute,utility only).
@@ -38,7 +26,7 @@ ENV STARTUPDIR=/dockerstartup
 ENV INST_SCRIPTS=$STARTUPDIR/install
 WORKDIR $HOME
 
-#! Add OBS Studio PPA and install OBS with minimal dependencies (add-apt-repository is already in the Kasm base image)
+#! OBS comes from the official obsproject PPA; the Kasm base image already ships add-apt-repository
 #! libvlc5 + vlc-plugin-base: needed by OBS's "VLC Video Source"
 #! libturbojpeg + libimobiledevice6 + libusbmuxd6: runtime libraries of the DroidCam plugin
 RUN add-apt-repository ppa:obsproject/obs-studio -y && \
@@ -57,8 +45,8 @@ RUN add-apt-repository ppa:obsproject/obs-studio -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-#! We are going to git clone droidcam-obs-plugin, and build it ourselves. This is because the pre-built version does not work with the latest OBS Studio.
-#! It is built in its own stage (on top of the same OBS install), so the compilers and -dev packages do not end up in the final image.
+#! DroidCam is compiled from its source tag, since the prebuilt plugin does not load in current OBS releases.
+#! The compile runs in a separate stage (on top of the same OBS install), so the compilers and -dev packages do not end up in the final image.
 #! libsimde-dev: the OBS 32 headers include SIMDe, which the obs-studio package does not pull in
 #! --no-as-needed: the plugin Makefile puts -l flags before the sources, so Ubuntu's default --as-needed would drop them
 #! and OBS would fail to load the plugin with "undefined symbol"
@@ -86,20 +74,18 @@ COPY --from=droidcam-build /tmp/droidcam-obs-plugin/build/droidcam-obs.so /usr/l
 COPY --from=droidcam-build /tmp/droidcam-obs-plugin/data /usr/share/obs/obs-plugins/droidcam-obs
 RUN ! ldd /usr/lib/x86_64-linux-gnu/obs-plugins/droidcam-obs.so | grep "not found"
 
-#! Add to sudo users so we can actually do "sudo" within the container
+#! kasm-user may run sudo without a password inside the container
 RUN echo 'kasm-user ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
 
-#! Run as a "single" application
-#! Set background as just plain black
+#! Use Kasm's single-application xfce profile (black desktop, OBS is the only window) and drop the panel
 RUN cp $HOME/.config/xfce4/xfconf/single-application-xfce-perchannel-xml/* $HOME/.config/xfce4/xfconf/xfce-perchannel-xml/
 RUN apt-get remove -y xfce4-panel
 
 COPY custom_startup.sh $STARTUPDIR/custom_startup.sh
 RUN chmod +x $STARTUPDIR/custom_startup.sh
 
-#! SSL is off by default so that we can access it via HTTP (e.g. behind a reverse proxy + let's encrypt)
-#! We do this by changing require_ssl in /usr/share/kasmvnc/kasmvnc_defaults.yaml from require_ssl: true to require_ssl: false
-#! SSL_ENABLED=true passes -sslOnly on the command line, which takes precedence over this config value
+#! Plain HTTP is the default, for a reverse proxy that terminates TLS: require_ssl is turned off in the KasmVNC defaults file.
+#! With SSL_ENABLED=true the server gets -sslOnly on its command line, which overrides that setting.
 RUN sed -i -E 's/^([[:space:]]*)require_ssl:[[:space:]]*true/\1require_ssl: false/' /usr/share/kasmvnc/kasmvnc_defaults.yaml
 
 #! SSL and HTTP auth are decided at container start from SSL_ENABLED, HTTP_USER and HTTP_PASSWORD (see kasm_obs_auth.sh)
@@ -129,7 +115,7 @@ RUN chmod +x $STARTUPDIR/kasm_obs_shutdown.sh && \
     grep -A1 '^function cleanup () {$' $f | grep -qx '    /dockerstartup/kasm_obs_shutdown.sh' && \
     ! grep -qE -- '-sslOnly|kasm_user:|-u kasm_' $f
 
-#! IMPORTANT, the whole OBS config (~/.config/obs-studio) will be symlinked to: /mnt/obs-config
+#! ~/.config/obs-studio is a symlink to /mnt/obs-config, so a volume there keeps every OBS setting
 #! Older versions only linked the "basic" folder; custom_startup.sh moves such a layout into /mnt/obs-config/basic
 #! /mnt/obs-config and /recordings are owned by the container user so new named volumes are writable
 RUN mkdir -p /home/kasm-user/.config && \
@@ -137,7 +123,7 @@ RUN mkdir -p /home/kasm-user/.config && \
     chown 1000:0 /mnt/obs-config /recordings && \
     ln -s /mnt/obs-config /home/kasm-user/.config/obs-studio
 
-#! Default user
+#! Give the profile to UID 1000 (kasm-user), then switch HOME to that user's home for runtime
 RUN chown 1000:0 $HOME
 RUN $STARTUPDIR/set_user_permission.sh $HOME
 

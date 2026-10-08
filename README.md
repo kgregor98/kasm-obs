@@ -215,6 +215,22 @@ docker build -t kasm-obs:test .
 
 The smoke test is the same one the publish workflow runs. It uses port 16901 and a container named `kasm-obs-smoke`, and ends with `Smoke test passed`. Run both commands with `sudo` if your user can't access Docker directly.
 
+## Third-party software
+
+The container image contains software from other projects under their own licenses. The MIT License of this repository does not apply to them.
+
+| Component | License | Source |
+| --- | --- | --- |
+| [OBS Studio](https://github.com/obsproject/obs-studio) | GPL-2.0-or-later | Installed unmodified from the [OBS Studio PPA](https://launchpad.net/~obsproject/+archive/ubuntu/obs-studio) |
+| [DroidCam OBS plugin](https://github.com/dev47apps/droidcam-obs-plugin) | GPL-2.0-or-later | Built unmodified from tag [`2.5.1`](https://github.com/dev47apps/droidcam-obs-plugin/tree/2.5.1), see the [`Dockerfile`](Dockerfile) |
+| [KasmVNC](https://github.com/kasmtech/KasmVNC) | GPL-2.0 | Part of the Kasm base image |
+| [Kasm core images](https://github.com/kasmtech/workspaces-core-images) | MIT | Base image `kasmweb/core-ubuntu-noble` |
+| Ubuntu packages (FFmpeg, VLC libraries, and others) | Various, mostly GPL/LGPL | Installed unmodified from the Ubuntu archive |
+
+License texts for the installed packages are in `/usr/share/doc/<package>/copyright` inside the image. Source code for the Ubuntu and PPA packages is available from Ubuntu and Launchpad. For any component, you can also request the source used for a given image by opening an issue in this repository.
+
+"OBS" and "OBS Studio" are registered trademarks of Wizards of OBS LLC. Kasm and KasmVNC are products of Kasm Technologies. This project is not affiliated with or endorsed by either.
+
 ## License
 
-Released under the MIT License. See [LICENSE](LICENSE).
+The files in this repository are released under the MIT License. See [LICENSE](LICENSE).
